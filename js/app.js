@@ -42,6 +42,10 @@
     return (Number(ha || 0) / HA_POR_CUADRA).toFixed(1);
   }
 
+  function haAM2(ha) {
+    return Math.round(Number(ha || 0) * 10000);
+  }
+
   /**
    * Formatea números con espacio fino en miles (ej. 2 950) según la guía de estilo
    */
@@ -127,7 +131,7 @@
   }
 
   /**
-   * Inicializa el mapa satelital Leaflet con Esri World Imagery + OpenStreetMap + Leaflet.draw
+   * Inicializa el mapa Leaflet con mapas base abiertos, capas NASA GIBS y Leaflet.draw
    */
   function inicializarMapa() {
     const mapEl = document.getElementById('mapa-parcela');
@@ -142,22 +146,64 @@
       attribution: '© OpenStreetMap'
     });
 
+    state.wmsCatastro = L.tileLayer.wms(
+      'https://geoportal.agricultura.gob.ec/sigtierras/catastro_rural/wms',
+      {
+        layers: 'catastro_rural',
+        format: 'image/png',
+        transparent: true,
+        version: '1.3.0',
+        opacity: 0.65,
+        attribution: 'SIGTIERRAS · MAG Ecuador'
+      }
+    );
+
     state.map = L.map('mapa-parcela', {
       center: [lat, lon],
       zoom: 16,
       layers: [osmCalle]
     });
 
-    // Mapas base abiertos + capas satelitales NASA GIBS (panel bajo el mapa)
+    // Selector de capas en el mapa: mapas base abiertos, capas NASA GIBS y catastro rural del MAG
     const panelCapas = document.getElementById('capas-nasa');
     if (window.CapasNASA && panelCapas) {
-      state.capasNasa = window.CapasNASA.montar(state.map, panelCapas);
+      state.capasNasa = window.CapasNASA.montar(state.map, panelCapas, {
+        'Catastro rural MAG (SIGTIERRAS)': state.wmsCatastro
+      });
+    } else {
+      L.control.layers({ 'Caminos y comunidades (OSM)': osmCalle },
+        { 'Catastro rural MAG (SIGTIERRAS)': state.wmsCatastro }, { position: 'topright' }).addTo(state.map);
     }
 
     state.drawnItems = new L.FeatureGroup();
     state.map.addLayer(state.drawnItems);
 
     if (L.Control && L.Control.Draw) {
+      if (L.drawLocal) {
+        L.drawLocal.draw.toolbar.actions = { title: 'Cancelar dibujo del lote', text: 'Cancelar' };
+        L.drawLocal.draw.toolbar.finish = { title: 'Terminar y cerrar el lote', text: 'Terminar lote' };
+        L.drawLocal.draw.toolbar.undo = { title: 'Borrar la última esquina marcada', text: 'Borrar punto' };
+        L.drawLocal.draw.toolbar.buttons.polygon = 'Dibujar polígono (marcar esquinas de tu lote)';
+        L.drawLocal.draw.toolbar.buttons.rectangle = 'Dibujar rectángulo (arrastrar en diagonal)';
+        L.drawLocal.draw.handlers.polygon.tooltip = {
+          start: 'Haz clic en la 1.ª esquina de tu terreno.',
+          cont: 'Haz clic en la siguiente esquina.',
+          end: 'Haz clic en el primer punto o doble clic para cerrar.'
+        };
+        L.drawLocal.draw.handlers.rectangle.tooltip = {
+          start: 'Haz clic en una esquina y arrastra para formar el rectángulo.'
+        };
+        L.drawLocal.edit.toolbar.actions.save = { title: 'Guardar los nuevos bordes del lote', text: 'Guardar cambios' };
+        L.drawLocal.edit.toolbar.actions.cancel = { title: 'Cancelar y descartar cambios', text: 'Cancelar' };
+        L.drawLocal.edit.toolbar.actions.clearAll = { title: 'Limpiar todo', text: 'Limpiar' };
+        L.drawLocal.edit.toolbar.buttons.edit = 'Editar bordes del lote (mover esquinas)';
+        L.drawLocal.edit.toolbar.buttons.editDisabled = 'No hay lote en el mapa para editar';
+        L.drawLocal.edit.handlers.edit.tooltip = {
+          text: 'Arrastra los círculos blancos para ajustar las esquinas de tu terreno.',
+          subtext: 'Pulsa «Guardar cambios» cuando termines.'
+        };
+      }
+
       const drawControl = new L.Control.Draw({
         position: 'topleft',
         draw: {
@@ -166,15 +212,16 @@
             showArea: true,
             shapeOptions: {
               color: '#A6512B',
-              weight: 2,
-              fillOpacity: 0.25
+              weight: 3,
+              fillOpacity: 0.28
             }
           },
           rectangle: {
+            showArea: true,
             shapeOptions: {
               color: '#A6512B',
-              weight: 2,
-              fillOpacity: 0.25
+              weight: 3,
+              fillOpacity: 0.28
             }
           },
           polyline: false,
@@ -187,7 +234,172 @@
           remove: false
         }
       });
+      state.drawControl = drawControl;
       state.map.addControl(drawControl);
+
+      const syncToolbarPressedStates = (modo) => {
+        const btnPoly = document.getElementById('btn-guided-draw');
+        const btnRect = document.getElementById('btn-draw-rectangle');
+        const btnEdit = document.getElementById('btn-edit-layers');
+        const btnEditTxt = document.getElementById('btn-edit-layers-text');
+        const btnFinish = document.getElementById('btn-finish-draw');
+        const btnUndo = document.getElementById('btn-undo-draw');
+        const btnSaveEdit = document.getElementById('btn-save-edit');
+        if (btnPoly) btnPoly.setAttribute('aria-pressed', modo === 'polygon' ? 'true' : 'false');
+        if (btnRect) btnRect.setAttribute('aria-pressed', modo === 'rectangle' ? 'true' : 'false');
+        if (btnEdit) btnEdit.setAttribute('aria-pressed', modo === 'edit' ? 'true' : 'false');
+        if (btnEditTxt) btnEditTxt.textContent = modo === 'edit' ? 'Guardar bordes' : 'Editar bordes';
+        if (btnFinish) btnFinish.hidden = modo !== 'polygon';
+        if (btnUndo) btnUndo.hidden = modo !== 'polygon';
+        if (btnSaveEdit) btnSaveEdit.hidden = modo !== 'edit';
+      };
+
+      state.map.on(L.Draw.Event.DRAWSTART, function (e) {
+        state.guidedVertices = [];
+        state.activeDrawType = e.layerType || 'polygon';
+        state.rectStartLatLng = null;
+        syncToolbarPressedStates(state.activeDrawType);
+        document.body.classList.add('guided-drawing-active');
+        const banner = document.getElementById('guided-draw-banner');
+        const tooltip = document.getElementById('guided-draw-tooltip');
+        const txt = document.getElementById('guided-draw-banner-text');
+        const live = document.getElementById('guided-draw-live-area');
+        if (txt) {
+          txt.textContent = state.activeDrawType === 'rectangle'
+            ? 'Haz clic en una esquina de tu terreno y arrastra en diagonal para formar el rectángulo.'
+            : 'Haz clic en las esquinas de tu terreno. Doble clic o clic en el primer punto para terminar.';
+        }
+        if (live) live.textContent = 'Área en vivo: 0 m² (0.0 cuadras)';
+        if (banner) banner.hidden = false;
+        if (tooltip) tooltip.hidden = false;
+      });
+
+      state.map.on(L.Draw.Event.DRAWVERTEX, function (e) {
+        const layers = (e.layers && e.layers.getLayers && e.layers.getLayers()) || [];
+        state.guidedVertices = layers.map(m => m.getLatLng());
+      });
+
+      state.map.on(L.Draw.Event.DRAWSTOP, function () {
+        state.guidedVertices = [];
+        state.activeDrawType = null;
+        state.rectStartLatLng = null;
+        syncToolbarPressedStates(null);
+        document.body.classList.remove('guided-drawing-active');
+        const banner = document.getElementById('guided-draw-banner');
+        const tooltip = document.getElementById('guided-draw-tooltip');
+        if (banner) banner.hidden = true;
+        if (tooltip) tooltip.hidden = true;
+      });
+
+      state.map.on(L.Draw.Event.EDITSTART, function () {
+        state.activeDrawType = 'edit';
+        syncToolbarPressedStates('edit');
+        document.body.classList.add('guided-drawing-active');
+        const banner = document.getElementById('guided-draw-banner');
+        const txt = document.getElementById('guided-draw-banner-text');
+        const live = document.getElementById('guided-draw-live-area');
+        const p = obtenerParcelaActual();
+        if (txt) {
+          txt.textContent = 'Modo edición: arrastra los círculos blancos en las esquinas del lote y pulsa «Guardar cambios».';
+        }
+        if (live && p) {
+          live.textContent = `Área actual: ${fmtMiles(haAM2(p.area_ha))} m² (~${haACuadras(p.area_ha)} cuadras)`;
+        }
+        if (banner) banner.hidden = false;
+      });
+
+      state.map.on(L.Draw.Event.EDITVERTEX, function () {
+        const live = document.getElementById('guided-draw-live-area');
+        const capa = state.drawnItems && state.drawnItems.getLayers()[0];
+        if (!capa || !live || typeof capa.getLatLngs !== 'function') return;
+        const raw = capa.getLatLngs();
+        const pts = Array.isArray(raw[0]) ? raw[0] : raw;
+        if (pts && pts.length >= 3) {
+          const ha = calcularAreaPoligonoHa(pts);
+          live.textContent = `Nueva área: ${fmtMiles(haAM2(ha))} m² (~${haACuadras(ha)} cuadras)`;
+        }
+      });
+
+      state.map.on(L.Draw.Event.EDITSTOP, function () {
+        state.activeDrawType = null;
+        syncToolbarPressedStates(null);
+        document.body.classList.remove('guided-drawing-active');
+        const banner = document.getElementById('guided-draw-banner');
+        if (banner) banner.hidden = true;
+      });
+
+      state.map.on(L.Draw.Event.EDITED, function (e) {
+        const layers = e.layers;
+        layers.eachLayer(function (layer) {
+          if (typeof layer.getLatLngs !== 'function') return;
+          const raw = layer.getLatLngs();
+          const latlngs = Array.isArray(raw[0]) ? raw[0] : raw;
+          if (!latlngs || latlngs.length < 3) return;
+          const centro = layer.getBounds().getCenter();
+          const p = obtenerParcelaActual();
+          p.area_ha = calcularAreaPoligonoHa(latlngs);
+          p.centroide = { lat: Number(centro.lat.toFixed(5)), lon: Number(centro.lng.toFixed(5)) };
+          p.geometria = {
+            type: 'Polygon',
+            coordinates: [
+              latlngs.map(pt => [Number(pt.lng.toFixed(5)), Number(pt.lat.toFixed(5))])
+                .concat([[Number(latlngs[0].lng.toFixed(5)), Number(latlngs[0].lat.toFixed(5))]])
+            ]
+          };
+          layer.setPopupContent(crearPopupParcelaHtml(p));
+          sincronizarControlesPaso2ConParcela();
+          actualizarTodo();
+          cargarDatosLoteEnVivo(p, layer);
+        });
+      });
+
+      state.map.on('mousedown', function (e) {
+        if (state.activeDrawType === 'rectangle' && e.latlng) {
+          state.rectStartLatLng = e.latlng;
+        }
+      });
+
+      state.map.on('mousemove', function (e) {
+        const tooltip = document.getElementById('guided-draw-tooltip');
+        const live = document.getElementById('guided-draw-live-area');
+        if (!tooltip || tooltip.hidden) return;
+        if (e.containerPoint) {
+          tooltip.style.left = `${e.containerPoint.x}px`;
+          tooltip.style.top = `${e.containerPoint.y}px`;
+        }
+        if (state.activeDrawType === 'rectangle') {
+          if (state.rectStartLatLng && e.latlng) {
+            const a = state.rectStartLatLng;
+            const b = e.latlng;
+            const rectPts = [
+              { lat: a.lat, lng: a.lng },
+              { lat: a.lat, lng: b.lng },
+              { lat: b.lat, lng: b.lng },
+              { lat: b.lat, lng: a.lng }
+            ];
+            const ha = calcularAreaPoligonoHa(rectPts);
+            const m2 = fmtMiles(haAM2(ha));
+            const cuad = haACuadras(ha);
+            if (live) live.textContent = `Área en vivo: ${m2} m² (~${cuad} cuadras)`;
+            tooltip.textContent = `Rectángulo: ${m2} m² (~${cuad} cuadras) · Suelta para crear`;
+          } else {
+            tooltip.textContent = 'Haz clic y arrastra para dibujar el rectángulo';
+          }
+          return;
+        }
+        const pts = (state.guidedVertices || []).concat([e.latlng]);
+        if (pts.length >= 3) {
+          const ha = calcularAreaPoligonoHa(pts);
+          const m2 = fmtMiles(haAM2(ha));
+          const cuad = haACuadras(ha);
+          if (live) live.textContent = `Área en vivo: ${m2} m² (~${cuad} cuadras)`;
+          tooltip.textContent = `${m2} m² (~${cuad} cuadras) · Doble clic para cerrar`;
+        } else {
+          tooltip.textContent = pts.length === 1
+            ? 'Haz clic en la 1.ª esquina de tu terreno'
+            : 'Marca al menos 3 esquinas · Doble clic para terminar';
+        }
+      });
 
       state.map.on(L.Draw.Event.CREATED, function (e) {
         const layer = e.layer;
@@ -228,7 +440,7 @@
         <strong style="font-size: 0.92rem; color: #3E4A1E;">${parcela.nombre}</strong>
         <div style="font-size: 0.82rem; color: #5A5440; margin-top: 4px; font-variant-numeric: tabular-nums;">
           Ubicación: ${parcela.ubicacion_texto}<br/>
-          Superficie: <b>${parcela.area_ha} ha</b> (${cuadras} cuadras)<br/>
+          Superficie: <b>${fmtMiles(haAM2(parcela.area_ha))} m²</b> (${cuadras} cuadras)<br/>
           Altitud: <b>${fmtMiles(parcela.terreno.elev_m)} m s.n.m.</b> · Pendiente: <b>${parcela.terreno.pendiente_pct} %</b><br/>
           Suelo: <b>${parcela.suelo.textura}</b> (SOC: ${parcela.suelo.soc_pct} %, pH ${parcela.suelo.ph})
         </div>
@@ -325,7 +537,7 @@
     const token = (state.tokenLote = (state.tokenLote || 0) + 1);
     const filas = {
       terreno: { texto: 'Altitud y pendiente · SRTM 30 m (OpenTopoData / Open-Elevation / Open-Meteo)', ok: null },
-      clima: { texto: 'Clima 2015–2024 · NASA POWER', ok: null },
+      clima: { texto: 'Clima 2015–actualidad · NASA POWER', ok: null },
       anomalia: { texto: 'Anomalía de lluvia · NASA POWER', ok: null },
       suelo: { texto: 'Suelo · ISRIC SoilGrids 250 m', ok: null }
     };
@@ -355,7 +567,9 @@
     if (r.clima) {
       p.clima_mensual = r.clima.meses;
       p.clima_metodo_et0 = r.clima.metodoEt0;
-      p.estado_datos.clima = `NASA POWER 2015–2024 (diario, AG); T corregida ${r.clima.dT >= 0 ? '+' : ''}${r.clima.dT.toFixed(1)} °C por altitud`;
+      const per = r.clima.periodo || '2015–actualidad';
+      filas.clima.texto = `Clima ${per} · NASA POWER`;
+      p.estado_datos.clima = `NASA POWER ${per} (diario, AG); T corregida ${r.clima.dT >= 0 ? '+' : ''}${r.clima.dT.toFixed(1)} °C por altitud`;
     } else { p.estado_datos.clima = falla; }
     if (r.anomalia) {
       p.anomalia = r.anomalia;
@@ -365,6 +579,11 @@
       p.suelo = r.suelo;
       p.estado_datos.suelo = 'ISRIC SoilGrids 250 m (0–30 cm)';
     } else { p.estado_datos.suelo = falla; p.suelo.fuente = falla; }
+    delete p.satelite_nasa;
+    if (p.agricultor && !p.agricultor.editado_tierra) {
+      p.agricultor.tipo_tierra = inferirTipoTierraSimple(p.suelo && p.suelo.textura);
+    }
+    asegurarEsquemaDual(p);
     state.parcelasOriginales[lote.id] = clonar(p);
 
     const nOk = ['terreno', 'clima', 'anomalia', 'suelo'].filter(k => r[k] && !(k === 'terreno' && r[k].aproximado)).length;
@@ -384,15 +603,17 @@
     const coords = (parcela.geometria && parcela.geometria.coordinates && parcela.geometria.coordinates[0]) || [];
     if (coords.length > 0) {
       const latlngs = coords.map(par => [par[1], par[0]]);
-      const colorBorde = parcela.terreno.pendiente_pct > 25
+      const pend = parcela.terreno.pendiente_pct;
+      const colorBorde = pend > 25
         ? '#9B2C1F'
-        : (parcela.terreno.pendiente_pct >= 12 ? '#B7791F' : '#4F6B1F');
+        : (pend >= 12 ? '#B7791F' : '#4F6B1F');
 
       const poly = L.polygon(latlngs, {
         color: colorBorde,
-        weight: 2,
+        weight: 3,
+        dashArray: pend >= 12 ? '6, 4' : null,
         fillColor: colorBorde,
-        fillOpacity: 0.22
+        fillOpacity: 0.24
       });
 
       poly.bindPopup(crearPopupParcelaHtml(parcela));
@@ -530,7 +751,7 @@
     }
 
     const cuadras = haACuadras(parcela.area_ha);
-    document.getElementById('kpi-area-val').innerHTML = `${parcela.area_ha} <span class="unidad">ha</span>`;
+    document.getElementById('kpi-area-val').innerHTML = `${fmtMiles(haAM2(parcela.area_ha))} <span class="unidad">m²</span>`;
     document.getElementById('kpi-area-sub').textContent = `(~${cuadras} cuadras)`;
 
     document.getElementById('kpi-elev-val').innerHTML = `${fmtMiles(parcela.terreno.elev_m)} <span class="unidad">m s.n.m.</span>`;
@@ -651,7 +872,7 @@
     const sbElev = document.getElementById('sidebar-parcela-elev');
     const sbPend = document.getElementById('sidebar-parcela-pend');
     if (sbNombre) sbNombre.textContent = parcela.nombre || 'Parcela activa';
-    if (sbArea) sbArea.textContent = `${parcela.area_ha} ha`;
+    if (sbArea) sbArea.textContent = `${fmtMiles(haAM2(parcela.area_ha))} m²`;
     if (sbElev) sbElev.textContent = `${fmtMiles(parcela.terreno.elev_m)} m`;
     if (sbPend) sbPend.textContent = `${parcela.terreno.pendiente_pct} %`;
 
@@ -878,6 +1099,79 @@
   }
 
   /**
+   * Construye dinámicamente las viñetas de "¿Por qué sugerimos esta rotación?"
+   * en función de las especies reales de la secuencia (leguminosas, familias botánicas,
+   * arquitectura radicular y demanda hídrica) y del cultivo previo de la parcela.
+   */
+  function construirRazonesPorQueSugerimos(rot, parcela) {
+    const cultivos = rot.cultivos || [];
+    if (!cultivos.length) return [];
+
+    const catalogoLista = (state.catalogo && state.catalogo.cultivos) || [];
+    const histIds = (parcela && parcela.historia_declarada) || ['papa'];
+    const cultivoPrevio = catalogoLista.find(c => c.id === histIds[0]) || { nombre: 'Papa', familia: 'Solanáceas' };
+
+    const razones = [];
+
+    // 1. Ruptura del ciclo de plagas según familia previa y familias reales de la rotación
+    const familiasRot = [...new Set(cultivos.map(c => c.familia))];
+    const nombresRot = cultivos.map(c => c.nombre.toLowerCase()).join(', ');
+    const repiteFamPreviaAnio1 = cultivos[0] && cultivos[0].familia === cultivoPrevio.familia;
+
+    if (!repiteFamPreviaAnio1) {
+      razones.push(
+        `Rompe el ciclo de plagas y enfermedades de las ${cultivoPrevio.familia.toLowerCase()} (${cultivoPrevio.nombre.toLowerCase()}) al alternar ${familiasRot.length} familias distintas (${nombresRot}).`
+      );
+    } else {
+      razones.push(
+        `Diversifica la parcela alternando ${nombresRot} para reducir la presión de plagas específicas del suelo.`
+      );
+    }
+
+    // 2. Fijación biológica de nitrógeno y materia orgánica (solo habla de nitrógeno si hay leguminosas reales)
+    const leguminosas = cultivos.filter(c => c.familia === 'Fabáceas' || (c.credito_n_kg && c.credito_n_kg > 0));
+    if (leguminosas.length > 0) {
+      const nombresLeg = [...new Set(leguminosas.map(c => c.nombre.toLowerCase()))].join(' y ');
+      const siguienteCultivo = (() => {
+        const idxLeg = cultivos.findIndex(c => c.familia === 'Fabáceas' || (c.credito_n_kg && c.credito_n_kg > 0));
+        return idxLeg >= 0 && cultivos[idxLeg + 1] ? cultivos[idxLeg + 1].nombre.toLowerCase() : null;
+      })();
+      razones.push(
+        siguienteCultivo
+          ? `Fija nitrógeno atmosférico con ${nombresLeg}, mejorando la materia orgánica y dejando nutrientes listos para la siembra de ${siguienteCultivo}.`
+          : `Fija nitrógeno atmosférico mediante ${nombresLeg}, mejorando la materia orgánica y recuperando la fertilidad natural de la tierra.`
+      );
+    } else {
+      const rastrojoT = (rot.detalles && rot.detalles.materiaOrganica && rot.detalles.materiaOrganica.biomasaResiduoTHa) || 0;
+      razones.push(
+        rastrojoT > 3
+          ? `Incorpora abundante rastrojo vegetal de ${nombresRot} que protege la estructura y esponjosidad del suelo.`
+          : `Alterna coberturas de ${nombresRot} para mantener el suelo protegido frente a la erosión.`
+      );
+    }
+
+    // 3. Optimización hídrica y exploración radicular según las raíces y demanda reales de la secuencia
+    const raicesUnicas = [...new Set(cultivos.map(c => c.raiz_tipo).filter(Boolean))];
+    const cobAgua = (rot.balanceHidrico && rot.balanceHidrico.coberturaAguaPct) || 0;
+    const cultivoMenorAgua = cultivos.slice().sort((a, b) => (a.kc_medio || 0.8) - (b.kc_medio || 0.8))[0];
+
+    if (cobAgua >= 75) {
+      razones.push(
+        `Optimiza el uso hídrico en la temporada seca con especies rústicas como ${cultivoMenorAgua.nombre.toLowerCase()}` +
+        (raicesUnicas.length > 1 ? ` y combina raíces (${raicesUnicas.join(' y ')}) que aprovechan la humedad a distintas profundidades.` : '.')
+      );
+    } else {
+      razones.push(
+        raicesUnicas.length > 1
+          ? `Combina distintas profundidades de raíz (${raicesUnicas.join(' y ')}) entre ${nombresRot} para aprovechar mejor la humedad y no compactar la tierra.`
+          : `Ajusta los ciclos de ${nombresRot} a los meses de mayor lluvia de la zona para reducir la necesidad de riego.`
+      );
+    }
+
+    return razones;
+  }
+
+  /**
    * Renderiza las tarjetas comparativas del Paso 3 (Top 3 recomendadas + práctica actual)
    */
   function renderizarTarjetasRotacion(resultado, parcela) {
@@ -964,6 +1258,11 @@
         .filter(r => !/SoilGrids|250\s*m|NASA|satelital/i.test(r))
         .slice(0, 2);
 
+      // Explicabilidad dinámica para Opción 1, Opción 2 y Opción 3
+      const razonesSugerencia = !rot.esActual
+        ? construirRazonesPorQueSugerimos(rot, parcela)
+        : [];
+
       const alertaFitoHtml = rot.violaReglasFitosanitarias
         ? `<div class="estado riesgo" style="padding:6px 10px;">
              Alto · ${rot.motivoRiesgoFitosanitario}
@@ -1048,7 +1347,7 @@
                   <span class="tabular-nums">$${fmtMiles(rot.detalles.rentabilidad.margenAnualPromedioUsdHa)} <span class="unidad">/ha/año</span> (I_rent ${rot.subindices.rentabilidad.toFixed(2)})</span>
                 </div>
                 <div class="subbar-track"><div class="subbar-fill rent" style="width:${wRentPct}%"></div></div>
-                <div class="subbar-translation">En el lote (${areaHa} <span class="unidad">ha</span>): <b>~$${fmtMiles(ingresoTotalLoteAnual)}</b> <span class="unidad">USD/año</span></div>
+                <div class="subbar-translation">En el lote (${fmtMiles(haAM2(areaHa))} <span class="unidad">m²</span>): <b>~$${fmtMiles(ingresoTotalLoteAnual)}</b> <span class="unidad">USD/año</span></div>
               </div>
             </div>
 
@@ -1130,7 +1429,7 @@
             <div class="rot-simple-profit">
               <span class="rot-simple-profit-label">
                 <i data-lucide="coins" class="icono"></i>
-                <span>Ganancia estimada en ${areaHa} ha</span>
+                <span>Ganancia estimada en ${fmtMiles(haAM2(areaHa))} m²</span>
               </span>
               <span class="rot-simple-profit-val tabular-nums">~$${fmtMiles(ingresoTotalLoteAnual)} USD/año</span>
             </div>
@@ -1139,6 +1438,15 @@
               <li><i data-lucide="droplet" class="icono"></i><span><strong>Agua:</strong> ${textoAguaSimple}</span></li>
               <li><i data-lucide="sprout" class="icono"></i><span><strong>Suelo:</strong> ${textoSueloSimple}</span></li>
             </ul>
+
+            ${!rot.esActual && razonesSugerencia.length ? `
+              <div class="rot-simple-why">
+                <strong><i data-lucide="check-circle-2" class="icono"></i> ¿Por qué sugerimos esta rotación?</strong>
+                <ul>
+                  ${razonesSugerencia.map(razon => `<li>${razon}</li>`).join('')}
+                </ul>
+              </div>
+            ` : ''}
 
             ${riesgosPracticos.length ? `
               <div class="rot-simple-risks">
@@ -1825,13 +2133,13 @@
           (pos) => {
             const { latitude, longitude } = pos.coords;
             if (state.map) {
-              state.map.setView([latitude, longitude], 16);
+              state.map.setView([latitude, longitude], 18);
             }
             if (inpBuscar) {
               inpBuscar.value = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
             }
-            abrirLoteEnPunto(latitude, longitude);
-            setStatus('Ubicación encontrada. Lote en su posición con datos en vivo.');
+            abrirLoteEnPunto(latitude, longitude, 50);
+            setStatus('Ubicación GPS activa: lote sugerido de 50×50 m (2 500 m²) con datos de la NASA en vivo.');
           },
           () => {
             setStatus('No se pudo acceder a la ubicación actual.');
@@ -2122,6 +2430,360 @@
   }
 
   /**
+   * Configura las herramientas SIG, UX en campo (Dibujar polígono, Dibujar rectángulo, Editar bordes, GPS),
+   * sensores en tierra, drones y capas visuales
+   */
+  function configurarHerramientasSIG() {
+    const btnGuidedDraw = document.getElementById('btn-guided-draw');
+    const btnDrawRectangle = document.getElementById('btn-draw-rectangle');
+    const btnEditLayers = document.getElementById('btn-edit-layers');
+    const btnFinishDraw = document.getElementById('btn-finish-draw');
+    const btnUndoDraw = document.getElementById('btn-undo-draw');
+    const btnSaveEdit = document.getElementById('btn-save-edit');
+    const btnCancelGuided = document.getElementById('btn-cancel-guided');
+    const banner = document.getElementById('guided-draw-banner');
+
+    function clickLeafletDrawButton(selector) {
+      const el = document.querySelector(`#mapa-parcela ${selector}`);
+      if (el) {
+        el.click();
+        return true;
+      }
+      return false;
+    }
+
+    function cancelarAccionLeafletDrawActiva() {
+      const cancelBtn = document.querySelector(
+        '#mapa-parcela .leaflet-draw-actions li a[title*="Cancelar"]'
+      );
+      if (cancelBtn) {
+        cancelBtn.click();
+      }
+      document.body.classList.remove('guided-drawing-active');
+      if (banner) banner.hidden = true;
+    }
+
+    if (btnFinishDraw) {
+      btnFinishDraw.addEventListener('click', () => {
+        clickLeafletDrawButton('.leaflet-draw-actions li a[title*="Terminar"]');
+      });
+    }
+
+    if (btnUndoDraw) {
+      btnUndoDraw.addEventListener('click', () => {
+        clickLeafletDrawButton('.leaflet-draw-actions li a[title*="Borrar"]');
+      });
+    }
+
+    if (btnSaveEdit) {
+      btnSaveEdit.addEventListener('click', () => {
+        clickLeafletDrawButton('.leaflet-draw-actions li a[title*="Guardar"]');
+      });
+    }
+
+    // 1. Botón "Dibujar polígono"
+    if (btnGuidedDraw) {
+      btnGuidedDraw.addEventListener('click', () => {
+        if (state.activeDrawType === 'polygon') {
+          cancelarAccionLeafletDrawActiva();
+          return;
+        }
+        cancelarAccionLeafletDrawActiva();
+        clickLeafletDrawButton('.leaflet-draw-draw-polygon');
+      });
+    }
+
+    // 2. Botón "Dibujar rectángulo"
+    if (btnDrawRectangle) {
+      btnDrawRectangle.addEventListener('click', () => {
+        if (state.activeDrawType === 'rectangle') {
+          cancelarAccionLeafletDrawActiva();
+          return;
+        }
+        cancelarAccionLeafletDrawActiva();
+        clickLeafletDrawButton('.leaflet-draw-draw-rectangle');
+      });
+    }
+
+    // 3. Botón "Editar bordes" (Edit layers)
+    if (btnEditLayers) {
+      btnEditLayers.addEventListener('click', () => {
+        if (state.activeDrawType === 'edit') {
+          // Si ya está editando, al pulsar de nuevo guarda los cambios
+          const saveBtn = document.querySelector(
+            '#mapa-parcela .leaflet-draw-actions li a[title*="Guardar"]'
+          );
+          if (saveBtn) {
+            saveBtn.click();
+          } else {
+            cancelarAccionLeafletDrawActiva();
+          }
+          return;
+        }
+        cancelarAccionLeafletDrawActiva();
+        clickLeafletDrawButton('.leaflet-draw-edit-edit');
+      });
+    }
+
+    if (btnCancelGuided) {
+      btnCancelGuided.addEventListener('click', () => {
+        cancelarAccionLeafletDrawActiva();
+      });
+    }
+
+    // 4. Geolocalización activa en campo (50×50 m = 2 500 m²)
+    const btnGps50m = document.getElementById('btn-gps-50m');
+    if (btnGps50m) {
+      btnGps50m.addEventListener('click', () => {
+        const statusEl = document.getElementById('ubicacion-status');
+        if (!navigator.geolocation) {
+          if (statusEl) {
+            statusEl.hidden = false;
+            statusEl.textContent = 'Geolocalización no disponible en este navegador.';
+          }
+          return;
+        }
+        if (statusEl) {
+          statusEl.hidden = false;
+          statusEl.textContent = 'Obteniendo señal GPS de alta precisión en campo...';
+        }
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const { latitude, longitude } = pos.coords;
+            if (state.map) {
+              state.map.setView([latitude, longitude], 18);
+            }
+            abrirLoteEnPunto(latitude, longitude, 50);
+            if (statusEl) {
+              statusEl.hidden = false;
+              statusEl.textContent = 'GPS centrado: lote sugerido de 50×50 m (2 500 m²). Puedes usar «Editar bordes» para ajustar sus esquinas.';
+            }
+          },
+          () => {
+            const p = obtenerParcelaActual();
+            const lat = p && p.centroide ? p.centroide.lat : 0.0412;
+            const lon = p && p.centroide ? p.centroide.lon : -78.1425;
+            if (state.map) {
+              state.map.setView([lat, lon], 18);
+            }
+            abrirLoteEnPunto(lat, lon, 50);
+            if (statusEl) {
+              statusEl.hidden = false;
+              statusEl.textContent = 'Permiso GPS no concedido: se trazó parcela de 50×50 m (2 500 m²) en la vista actual.';
+            }
+          },
+          { enableHighAccuracy: true, timeout: 8000 }
+        );
+      });
+    }
+
+    // 5. Nodos de sensores georreferenciados en tierra (LoRa / telemetría local)
+    const btnAddSensor = document.getElementById('btn-add-sensor');
+    const btnRemoveSensor = document.getElementById('btn-remove-sensor');
+    const sensorPanel = document.getElementById('sensor-node-panel');
+    const sensorCoordsLabel = document.getElementById('sensor-node-coords');
+    const inpSensorLluvia = document.getElementById('sensor-lluvia-mm');
+    const inpSensorSoc = document.getElementById('sensor-soc-pct');
+    const inpSensorPh = document.getElementById('sensor-ph');
+
+    function sincronizarInputsSensorConParcela(p) {
+      if (!p) return;
+      const lluviaAnual = (p.clima_mensual || []).reduce((acc, m) => acc + (m.precip_mm || 0), 0);
+      if (inpSensorLluvia) inpSensorLluvia.value = Math.round(lluviaAnual);
+      if (inpSensorSoc) inpSensorSoc.value = Number(p.suelo.soc_pct || 0).toFixed(2);
+      if (inpSensorPh) inpSensorPh.value = Number(p.suelo.ph || 0).toFixed(1);
+    }
+
+    function aplicarTelemetriaSensorLocal() {
+      const p = obtenerParcelaActual();
+      if (!p) return;
+      asegurarEsquemaDual(p);
+
+      // Calibrar lluvia de NASA POWER con el pluviómetro local
+      const nuevaLluvia = inpSensorLluvia ? parseFloat(inpSensorLluvia.value) : NaN;
+      if (!isNaN(nuevaLluvia) && nuevaLluvia >= 0 && Array.isArray(p.clima_mensual)) {
+        const lluviaActual = p.clima_mensual.reduce((acc, m) => acc + (m.precip_mm || 0), 0);
+        if (lluviaActual > 0) {
+          const factor = nuevaLluvia / lluviaActual;
+          p.clima_mensual.forEach((m) => {
+            m.precip_mm = Math.round(m.precip_mm * factor * 10) / 10;
+          });
+        }
+      }
+
+      // Sobrescribir SOC y pH de SoilGrids con sonda en tierra
+      const nuevoSoc = inpSensorSoc ? parseFloat(inpSensorSoc.value) : NaN;
+      if (!isNaN(nuevoSoc) && nuevoSoc > 0) {
+        p.tecnico.suelo_laboratorio.soc_pct = nuevoSoc;
+      }
+      const nuevoPh = inpSensorPh ? parseFloat(inpSensorPh.value) : NaN;
+      if (!isNaN(nuevoPh) && nuevoPh >= 3.5 && nuevoPh <= 9.5) {
+        p.tecnico.suelo_laboratorio.ph = nuevoPh;
+      }
+
+      p.sensor_local_activo = true;
+      sincronizarControlesPaso2ConParcela();
+      actualizarTodo();
+    }
+
+    if (btnAddSensor) {
+      btnAddSensor.addEventListener('click', () => {
+        if (!state.map) return;
+        const p = obtenerParcelaActual();
+        const lat = p.centroide ? p.centroide.lat : 0.0412;
+        const lon = p.centroide ? p.centroide.lon : -78.1425;
+
+        if (state.sensorMarker) {
+          state.map.removeLayer(state.sensorMarker);
+        }
+
+        const iconSensor = L.divIcon({
+          className: 'sensor-pin-wrapper',
+          html: '<div class="sensor-pin" title="Arrastra el nodo sensor dentro de tu parcela"><i data-lucide="radio" class="icono"></i></div>',
+          iconSize: [30, 30],
+          iconAnchor: [15, 15]
+        });
+
+        state.sensorMarker = L.marker([lat, lon], {
+          draggable: true,
+          icon: iconSensor
+        }).addTo(state.map);
+
+        state.sensorMarker.bindPopup(
+          '<strong>Nodo sensor LoRa en tierra</strong><br>Arrastra para ubicarlo en el lote. Calibra NASA POWER y SoilGrids.'
+        ).openPopup();
+        refrescarIconosLucide();
+
+        if (sensorCoordsLabel) {
+          sensorCoordsLabel.textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+        }
+        sincronizarInputsSensorConParcela(p);
+        if (sensorPanel) sensorPanel.hidden = false;
+
+        state.sensorMarker.on('dragend', (ev) => {
+          const pos = ev.target.getLatLng();
+          if (sensorCoordsLabel) {
+            sensorCoordsLabel.textContent = `${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)}`;
+          }
+          aplicarTelemetriaSensorLocal();
+        });
+      });
+    }
+
+    if (btnRemoveSensor) {
+      btnRemoveSensor.addEventListener('click', () => {
+        if (state.sensorMarker && state.map) {
+          state.map.removeLayer(state.sensorMarker);
+          state.sensorMarker = null;
+        }
+        if (sensorPanel) sensorPanel.hidden = true;
+        const p = obtenerParcelaActual();
+        if (p) p.sensor_local_activo = false;
+        actualizarTodo();
+      });
+    }
+
+    [inpSensorLluvia, inpSensorSoc, inpSensorPh].forEach((inp) => {
+      if (inp) {
+        inp.addEventListener('change', aplicarTelemetriaSensorLocal);
+      }
+    });
+
+    // 7. Importación de rutas/polígonos de drones (KML / GeoJSON)
+    const inpImportDrone = document.getElementById('input-import-drone');
+    if (inpImportDrone) {
+      inpImportDrone.addEventListener('change', (ev) => {
+        const file = ev.target.files && ev.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (loadEv) => {
+          const texto = String(loadEv.target.result || '');
+          let coords = [];
+          let ndviDron = null;
+
+          try {
+            if (file.name.toLowerCase().endsWith('.kml') || texto.trim().startsWith('<')) {
+              const match = texto.match(/<coordinates>([\s\S]*?)<\/coordinates>/i);
+              if (match && match[1]) {
+                const pares = match[1].trim().split(/\s+/);
+                coords = pares
+                  .map((par) => {
+                    const partes = par.split(',');
+                    const lon = parseFloat(partes[0]);
+                    const lat = parseFloat(partes[1]);
+                    return !isNaN(lat) && !isNaN(lon) ? { lat, lng: lon } : null;
+                  })
+                  .filter(Boolean);
+              }
+            } else {
+              const geo = JSON.parse(texto);
+              const feature = geo.type === 'FeatureCollection'
+                ? (geo.features && geo.features[0])
+                : geo.type === 'Feature'
+                  ? geo
+                  : { geometry: geo, properties: {} };
+
+              if (feature && feature.properties && typeof feature.properties.ndvi === 'number') {
+                ndviDron = feature.properties.ndvi;
+              }
+
+              const geom = feature && feature.geometry ? feature.geometry : geo;
+              let ring = [];
+              if (geom.type === 'Polygon' && geom.coordinates && geom.coordinates[0]) {
+                ring = geom.coordinates[0];
+              } else if (geom.type === 'MultiPolygon' && geom.coordinates && geom.coordinates[0] && geom.coordinates[0][0]) {
+                ring = geom.coordinates[0][0];
+              } else if (geom.type === 'LineString' && geom.coordinates) {
+                ring = geom.coordinates;
+              }
+              coords = ring
+                .map((pt) => ({ lat: Number(pt[1]), lng: Number(pt[0]) }))
+                .filter((pt) => !isNaN(pt.lat) && !isNaN(pt.lng));
+            }
+          } catch (err) {
+            console.warn('Error leyendo archivo de dron:', err);
+          }
+
+          if (coords.length >= 3) {
+            if (
+              coords.length > 3 &&
+              Math.abs(coords[0].lat - coords[coords.length - 1].lat) < 1e-6 &&
+              Math.abs(coords[0].lng - coords[coords.length - 1].lng) < 1e-6
+            ) {
+              coords.pop();
+            }
+
+            const latCentro = coords.reduce((acc, c) => acc + c.lat, 0) / coords.length;
+            const lonCentro = coords.reduce((acc, c) => acc + c.lng, 0) / coords.length;
+            const lote = crearLoteDibujado(obtenerParcelaActual(), coords, { lat: latCentro, lng: lonCentro });
+            lote.nombre = `Vuelo Dron: ${file.name.replace(/\.[^.]+$/, '')}`;
+
+            if (ndviDron !== null) {
+              const mesesBase = ['2024-01', '2024-02', '2024-03', '2024-04', '2024-05', '2024-06'];
+              lote.ndvi_mensual = mesesBase.map((mes) => ({ mes, ndvi: Number(ndviDron.toFixed(2)) }));
+              lote.estado_datos.ndvi = 'Vuelo de dron importado (KML/GeoJSON)';
+            }
+
+            asegurarEsquemaDual(lote);
+            state.parcelasActivas[lote.id] = lote;
+            state.parcelasOriginales[lote.id] = clonar(lote);
+            state.parcelaActualId = lote.id;
+
+            dibujarPoligonoParcelaActual(true);
+            sincronizarControlesPaso2ConParcela();
+            actualizarTodo();
+            const capa = state.drawnItems && state.drawnItems.getLayers()[0];
+            cargarDatosLoteEnVivo(lote, capa || null);
+          }
+          inpImportDrone.value = '';
+        };
+        reader.readAsText(file);
+      });
+    }
+  }
+
+  /**
    * Configura todos los eventos de botones, sliders e inputs
    */
   function configurarAyudasAccesibles() {
@@ -2211,6 +2873,7 @@
     configurarSidebarTabs();
     configurarModoDual();
     configurarPanelUbicacion();
+    configurarHerramientasSIG();
 
     const onSoilChange = () => {
       const p = obtenerParcelaActual();

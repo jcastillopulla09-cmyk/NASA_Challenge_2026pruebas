@@ -2143,6 +2143,40 @@ body.modo-tecnico .solo-agricultor {
   flex-shrink: 0;
 }
 
+.rot-simple-why {
+  padding: 10px 12px;
+  border-left: 3px solid var(--oliva);
+  border-radius: 0 4px 4px 0;
+  background-color: #EEF2E6;
+  font-size: 13px;
+  color: var(--tinta);
+}
+
+.rot-simple-why strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  color: var(--oliva);
+  font-size: 13.5px;
+}
+
+.rot-simple-why strong .icono {
+  width: 15px;
+  height: 15px;
+  color: var(--oliva);
+  flex-shrink: 0;
+}
+
+.rot-simple-why ul {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  line-height: 1.45;
+}
+
 .rot-simple-risks {
   padding: 10px 12px;
   border-left: 3px solid var(--tierra);
@@ -3028,3 +3062,294 @@ body:not(.modo-tecnico) .plan-prioridades .sliders-list { display: none !importa
 .informe-opcion { text-align: left; }
 .informe-opcion-titulo { flex-direction: row !important; }
 .conveniencia-pista { display: block; }
+/* =========================================================
+   UX en Campo, Dibujo Guiado, Sensores y Capas del Mapa
+========================================================= */
+.map-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.btn-sm {
+  padding: 6px 11px;
+  font-size: 12.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-sm[hidden],
+.btn[hidden],
+.btn-sec[hidden] {
+  display: none !important;
+}
+
+.btn-sm .icono {
+  width: 14px;
+  height: 14px;
+}
+
+body.modo-tecnico label.solo-tecnico,
+body.modo-tecnico button.solo-tecnico {
+  display: inline-flex !important;
+}
+
+#btn-edit-layers[aria-pressed="true"],
+#btn-guided-draw[aria-pressed="true"],
+#btn-draw-rectangle[aria-pressed="true"] {
+  background-color: var(--tierra);
+  color: #FFFFFF;
+  border-color: var(--tierra);
+}
+
+#btn-edit-layers[aria-pressed="true"] .icono,
+#btn-guided-draw[aria-pressed="true"] .icono,
+#btn-draw-rectangle[aria-pressed="true"] .icono {
+  color: #FFFFFF;
+}
+
+/* =========================================================
+   Ocultar barra lateral duplicada de Leaflet.Draw:
+   las acciones viven únicamente en la barra superior del mapa
+========================================================= */
+#mapa-parcela .leaflet-draw.leaflet-control {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  margin: 0;
+}
+
+.guided-banner-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Vértices de edición (Editar bordes) más grandes y fáciles de arrastrar */
+#mapa-parcela .leaflet-editing-icon {
+  width: 14px !important;
+  height: 14px !important;
+  margin-left: -7px !important;
+  margin-top: -7px !important;
+  border-radius: 50%;
+  background-color: #FFFFFF;
+  border: 3px solid var(--tierra);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  cursor: grab;
+}
+
+.guided-draw-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  background-color: #E3EAD8;
+  border: 1px solid #9DB873;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--tinta);
+  flex-wrap: wrap;
+}
+
+.guided-draw-banner[hidden] {
+  display: none !important;
+}
+
+.guided-live-area {
+  padding: 2px 8px;
+  border-radius: 3px;
+  background-color: var(--oliva);
+  color: #FFFFFF;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.map-stage {
+  position: relative;
+}
+
+.guided-draw-tooltip {
+  position: absolute;
+  z-index: 800;
+  pointer-events: none;
+  padding: 6px 10px;
+  border-radius: 4px;
+  background-color: rgba(43, 42, 34, 0.92);
+  color: #FFFFFF;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  transform: translate(14px, 14px);
+}
+
+.guided-draw-tooltip[hidden] {
+  display: none !important;
+}
+
+body.guided-drawing-active .map-wrapper {
+  position: relative;
+  z-index: 950;
+  outline: 3px solid var(--oliva);
+  border-radius: 4px;
+}
+
+/* =========================================================
+   Disclaimer de Responsabilidad (Paso 3) y
+   Armonización de Resoluciones Espaciales (Metodología NASA)
+========================================================= */
+.rotasat-disclaimer-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 12px 16px;
+  background-color: #FAF3E3;
+  border: 1px solid #DFC282;
+  border-left: 4px solid var(--alerta);
+  border-radius: 4px;
+  color: var(--tinta);
+}
+
+.disclaimer-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: var(--alerta-bg);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.disclaimer-icon-wrap .icono {
+  width: 16px;
+  height: 16px;
+  color: var(--alerta);
+}
+
+.disclaimer-text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--tinta);
+}
+
+.disclaimer-text strong {
+  color: #7A4B0E;
+}
+
+.harmonization-box {
+  margin: 12px 0 14px;
+  padding: 14px 16px;
+  background-color: var(--papel-claro);
+  border: 1px solid var(--borde);
+  border-left: 4px solid var(--oliva);
+  border-radius: 4px;
+}
+
+.harmonization-box h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 1rem;
+  color: var(--oliva);
+}
+
+.harmonization-box p {
+  margin: 0 0 12px;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--tinta);
+}
+
+.harmonization-scale-pills {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.scale-pill {
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--borde);
+  font-weight: 600;
+}
+
+.scale-pill.coarse {
+  background-color: #F4ECE1;
+  color: var(--tierra);
+  border-color: #D8BFA8;
+}
+
+.scale-pill.mid {
+  background-color: #F3EFE3;
+  color: var(--tinta);
+}
+
+.scale-pill.fine {
+  background-color: #E6EEDB;
+  color: var(--oliva);
+  border-color: #B4C897;
+}
+
+.scale-arrow {
+  color: var(--gris);
+  font-weight: 700;
+}
+
+.sensor-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: var(--tierra);
+  color: #FFFFFF;
+  border: 2px solid #FFFFFF;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+/* --- Selector de capas dentro del mapa (ícono de capas) --- */
+.leaflet-control-layers {
+  border: 1px solid var(--borde) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 4px 14px rgba(43, 42, 34, 0.18) !important;
+  font-family: var(--fuente);
+}
+.leaflet-control-layers-toggle { width: 44px !important; height: 44px !important; }
+.leaflet-control-layers-expanded { padding: 10px 14px 12px !important; background: var(--campo) !important; color: var(--tinta); max-width: 280px; }
+.leaflet-control-layers-list { margin: 0 !important; padding: 0 !important; border: 0 !important; background: transparent !important; min-height: 0 !important; }
+.leaflet-control-layers-base::before,
+.leaflet-control-layers-overlays::before {
+  display: block;
+  margin: 2px 0 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--texto-2);
+}
+.leaflet-control-layers-base::before { content: "Mapa de fondo"; }
+.leaflet-control-layers-overlays::before { content: "Capas de la NASA y catastro"; }
+.leaflet-control-layers label { margin: 0; padding: 5px 0; font-size: 0.9rem; cursor: pointer; }
+.leaflet-control-layers label span { display: inline-flex; align-items: center; gap: 8px; }
+.leaflet-control-layers-selector { width: 18px; height: 18px; margin: 0 !important; top: 0 !important; accent-color: var(--oliva); }
+.leaflet-control-layers-separator { margin: 8px 0 !important; border-top-color: var(--borde) !important; }
+.capas-nasa[hidden] { display: none; }
+.capas-nasa .capas-leyenda { display: grid; }
+.capas-leyenda-ctrl .capas-fecha { justify-content: space-between; }

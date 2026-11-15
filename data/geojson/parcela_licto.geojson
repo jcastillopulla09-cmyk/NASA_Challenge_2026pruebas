@@ -7,8 +7,8 @@
         "id": "parcela_licto",
         "nombre": "Parcela 1 — Licto (Riobamba, Chimborazo)",
         "area_ha": 2.0,
-        "elev_m": 2900,
-        "pendiente_pct": 12.0
+        "elev_m": 2882,
+        "pendiente_pct": 2.8
       },
       "geometry": {
         "type": "Polygon",

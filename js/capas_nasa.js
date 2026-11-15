@@ -1,5 +1,6 @@
 /**
- * capas_nasa.js — Capas satelitales de la NASA (GIBS) y mapas base abiertos para el mapa del lote.
+ * capas_nasa.js — Capas satelitales de la NASA (GIBS) y mapas base abiertos, dentro del
+ * selector de capas del mapa (ícono de capas de Leaflet).
  *
  * Fuentes (todas abiertas):
  *  - NASA GIBS (dominio público): MODIS NDVI, SMAP L4 humedad de raíz, GPM IMERG lluvia,
@@ -108,106 +109,99 @@
   }
 
   /**
-   * Monta el panel de capas sobre el mapa.
-   * contenedor: elemento HTML donde va el panel (debajo del mapa).
+   * Monta el selector de capas dentro del mapa (ícono de capas, arriba a la derecha):
+   * mapas base abiertos, capas NASA GIBS y capas extra (p. ej. catastro rural del MAG).
+   * Debajo del mapa solo aparece una leyenda compacta cuando hay una capa NASA activa.
    */
-  function montar(map, contenedor) {
-    const estado = { base: null, capa: null, fechaManual: null };
+  function montar(map, contenedor, capasExtra) {
+    const estado = { fechaManual: null };
     const fechaDe = def => () => estado.fechaManual || fechaISO(def.retraso);
 
     const bases = {};
+    const basesCtl = {};
     BASES.forEach(b => {
       bases[b.clave] = b.gibs ? capaGibs(b, fechaDe(b), Object.assign({ opacity: 1 }, b.opts)) : L.tileLayer(b.url, b.opts);
+      basesCtl[b.nombre] = bases[b.clave];
     });
     const capas = {};
-    CAPAS.forEach(c => { capas[c.clave] = capaGibs(c, fechaDe(c)); });
+    const overlaysCtl = {};
+    const defDeCapa = new Map();
+    CAPAS.forEach(c => {
+      capas[c.clave] = capaGibs(c, fechaDe(c));
+      overlaysCtl[`NASA · ${c.nombre}`] = capas[c.clave];
+      defDeCapa.set(capas[c.clave], c);
+    });
+    Object.entries(capasExtra || {}).forEach(([nombre, capa]) => { if (capa) overlaysCtl[nombre] = capa; });
 
     // Quita cualquier capa base previa y deja Sentinel-2 por defecto
     map.eachLayer(l => { if (l instanceof L.TileLayer) map.removeLayer(l); });
-    estado.base = bases.sentinel.addTo(map);
+    bases.sentinel.addTo(map);
+    const control = L.control.layers(basesCtl, overlaysCtl, { position: 'topright', collapsed: true }).addTo(map);
 
+    contenedor.hidden = true;
     contenedor.innerHTML = `
-      <div class="capas-cabeza">
-        <strong><i data-lucide="layers" class="icono" aria-hidden="true"></i> Capas de la NASA sobre su lote</strong>
-        <label class="capas-fecha">Fecha
-          <input type="date" id="capas-fecha" max="${fechaISO(0)}" />
-        </label>
-      </div>
-      <div class="capas-fila" role="group" aria-label="Mapa base">
-        <span class="capas-etiqueta">Mapa</span>
-        ${BASES.map(b => `<button type="button" class="capa-chip${b.clave === 'sentinel' ? ' activo' : ''}" data-base="${b.clave}" aria-pressed="${b.clave === 'sentinel'}"><i data-lucide="${b.emoji}" class="icono" aria-hidden="true"></i> ${b.nombre}</button>`).join('')}
-      </div>
-      <div class="capas-fila" role="group" aria-label="Capa NASA">
-        <span class="capas-etiqueta">Ver</span>
-        <button type="button" class="capa-chip activo" data-capa="" aria-pressed="true">Ninguna</button>
-        ${CAPAS.map(c => `<button type="button" class="capa-chip" data-capa="${c.clave}" aria-pressed="false"><i data-lucide="${c.emoji}" class="icono" aria-hidden="true"></i> ${c.nombre}</button>`).join('')}
-      </div>
-      <div class="capas-leyenda" id="capas-leyenda" hidden>
+      <div class="capas-leyenda">
         <div class="capas-leyenda-txt"><strong id="capas-ley-titulo"></strong><span id="capas-ley-sensor"></span><span id="capas-ley-texto"></span></div>
         <div class="capas-leyenda-ctrl">
           <span class="capas-gradiente" id="capas-gradiente" aria-hidden="true"></span>
           <label>Transparencia <input type="range" id="capas-opacidad" min="20" max="100" value="70" /></label>
+          <label class="capas-fecha">Fecha de la imagen <input type="date" id="capas-fecha" max="${fechaISO(0)}" /></label>
           <a id="capas-worldview" target="_blank" rel="noopener">Ver escala oficial en NASA Worldview ↗</a>
           <span class="capas-aviso" id="capas-aviso" role="status"></span>
         </div>
       </div>`;
-
-    const leyenda = contenedor.querySelector('#capas-leyenda');
     const aviso = contenedor.querySelector('#capas-aviso');
     const inpFecha = contenedor.querySelector('#capas-fecha');
     const inpOpac = contenedor.querySelector('#capas-opacidad');
     const linkWv = contenedor.querySelector('#capas-worldview');
     let defActual = null;
+    let capaActual = null;
 
     const pintarLeyenda = () => {
-      if (!defActual) { leyenda.hidden = true; return; }
-      leyenda.hidden = false;
+      contenedor.hidden = !defActual;
+      if (!defActual) return;
+      const f = estado.fechaManual || fechaISO(defActual.retraso);
       contenedor.querySelector('#capas-ley-titulo').textContent = defActual.nombre;
-      contenedor.querySelector('#capas-ley-sensor').textContent = `${defActual.sensor} · imagen del ${estado.fechaManual || fechaISO(defActual.retraso)}`;
+      contenedor.querySelector('#capas-ley-sensor').textContent = `${defActual.sensor} · imagen del ${f}`;
       contenedor.querySelector('#capas-ley-texto').textContent = defActual.leyenda;
       const g = contenedor.querySelector('#capas-gradiente');
       g.hidden = !defActual.gradiente;
       if (defActual.gradiente) g.style.background = defActual.gradiente;
-      linkWv.href = enlaceWorldview(defActual, map, estado.fechaManual || fechaISO(defActual.retraso));
+      linkWv.href = enlaceWorldview(defActual, map, f);
     };
 
-    contenedor.querySelectorAll('[data-base]').forEach(btn => btn.addEventListener('click', () => {
-      const nueva = bases[btn.getAttribute('data-base')];
-      if (estado.base) map.removeLayer(estado.base);
-      estado.base = nueva.addTo(map);
-      nueva.bringToBack();
-      contenedor.querySelectorAll('[data-base]').forEach(b => { b.classList.toggle('activo', b === btn); b.setAttribute('aria-pressed', b === btn); });
-    }));
-
-    contenedor.querySelectorAll('[data-capa]').forEach(btn => btn.addEventListener('click', () => {
-      const clave = btn.getAttribute('data-capa');
-      if (estado.capa) { map.removeLayer(estado.capa); estado.capa = null; }
+    map.on('overlayadd', e => {
+      const def = defDeCapa.get(e.layer);
+      if (!def) return;
+      // Una sola capa NASA a la vez: se entiende mejor y la leyenda es clara
+      setTimeout(() => {
+        defDeCapa.forEach((d, capa) => { if (capa !== e.layer && map.hasLayer(capa)) map.removeLayer(capa); });
+      }, 0);
+      defActual = def; capaActual = e.layer;
       aviso.textContent = '';
-      defActual = CAPAS.find(c => c.clave === clave) || null;
-      if (defActual) {
-        estado.capa = capas[clave];
-        estado.capa.setOpacity(Number(inpOpac.value) / 100);
-        estado.capa.off('estado').on('estado', e => {
-          aviso.textContent = e.ok ? '' : 'Sin imagen para esa fecha (nubes o satélite sin pasar): pruebe otra fecha.';
-        });
-        estado.capa.addTo(map);
-        // Una capa de 9 km no se ve a zoom de parcela: alejar un poco para que se entienda
-        if (['humedad', 'lluvia'].includes(clave) && map.getZoom() > 11) map.setZoom(10);
-        if (['ndvi', 'temp'].includes(clave) && map.getZoom() > 14) map.setZoom(13);
-      }
-      contenedor.querySelectorAll('[data-capa]').forEach(b => { b.classList.toggle('activo', b === btn); b.setAttribute('aria-pressed', b === btn); });
+      capaActual.setOpacity(Number(inpOpac.value) / 100);
+      capaActual.off('estado').on('estado', ev => {
+        aviso.textContent = ev.ok ? '' : 'Sin imagen para esa fecha (nubes o satélite sin pasar): pruebe otra fecha.';
+      });
+      // Una capa de 9–10 km no se distingue a zoom de parcela: alejar para que se entienda
+      if (['humedad', 'lluvia'].includes(def.clave) && map.getZoom() > 11) map.setZoom(10);
+      if (['ndvi', 'temp'].includes(def.clave) && map.getZoom() > 14) map.setZoom(13);
       pintarLeyenda();
-    }));
+    });
+    map.on('overlayremove', e => {
+      if (e.layer === capaActual) { defActual = null; capaActual = null; pintarLeyenda(); }
+    });
 
-    inpOpac.addEventListener('input', () => { if (estado.capa) estado.capa.setOpacity(Number(inpOpac.value) / 100); });
+    inpOpac.addEventListener('input', () => { if (capaActual) capaActual.setOpacity(Number(inpOpac.value) / 100); });
     inpFecha.addEventListener('change', () => {
       estado.fechaManual = inpFecha.value || null;
       Object.values(capas).forEach(c => c.actualizarFecha());
       if (bases.viirs.actualizarFecha) bases.viirs.actualizarFecha();
+      aviso.textContent = '';
       pintarLeyenda();
     });
-    if (window.lucide) window.lucide.createIcons();
     map.on('moveend', () => { if (defActual) linkWv.href = enlaceWorldview(defActual, map, estado.fechaManual || fechaISO(defActual.retraso)); });
+    estado.control = control;
     return estado;
   }
 

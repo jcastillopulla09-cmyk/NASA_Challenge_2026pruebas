@@ -111,6 +111,21 @@
         { hasta: 100, color: 'ok', texto: 'Guarda bien el agua entre lluvias' }
       ]
     }));
+    // Humedad en la zona de raíces medida por SMAP (solo lotes con serie de NASA AppEEARS)
+    const sm = parcela.smap && Number(parcela.smap.sm_rootzone_m3m3);
+    if (Number.isFinite(sm) && sm > 0) {
+      const pct = Math.round(sm * 1000) / 10;
+      const an = Number(parcela.smap.anomalia_pct) || 0;
+      html.push(barra({
+        titulo: 'Humedad en las raíces (satélite SMAP)', icono: 'waves', valor: pct, min: 0, max: 50, unidad: '%',
+        valorTexto: `${pct} %`,
+        zonas: [
+          { hasta: 15, color: 'alerta', texto: 'Suelo seco en la zona de raíces' },
+          { hasta: 35, color: 'ok', texto: `Humedad adecuada (${an >= 0 ? '+' : ''}${an} % frente a su promedio de 3 años)` },
+          { hasta: 50, color: 'info', texto: 'Suelo muy húmedo: cuide el drenaje' }
+        ]
+      }));
+    }
     const socV = Number(parcela.suelo?.soc_pct);
     if (Number.isFinite(socV) && socV > 0) {
       html.push(barra({
