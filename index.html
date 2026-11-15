@@ -99,7 +99,7 @@
           </div>
           <div id="sidebar-parcela-nombre" class="sidebar-memory-name">Licto (Riobamba)</div>
           <div class="sidebar-memory-meta tabular-nums">
-            <span id="sidebar-parcela-area">2 ha</span> ·
+            <span id="sidebar-parcela-area">20 000 m²</span> ·
             <span id="sidebar-parcela-elev">2 900 m</span> ·
             <span id="sidebar-parcela-pend">12 %</span>
           </div>
@@ -317,16 +317,83 @@
 
           <div class="terreno-grid">
             <!-- Mapa Satelital Leaflet -->
-            <div class="map-wrapper">
+            <div class="map-wrapper" id="map-wrapper">
               <div class="map-toolbar">
-                <span>Use la herramienta de polígono (arriba a la izquierda del mapa) para trazar su lote y calcular
-                  hectáreas y cuadras.</span>
-                <button type="button" id="btn-reset-parcela" class="btn-sec">
-                  Restaurar linderos y suelo original
-                </button>
+                <div class="map-toolbar-actions">
+                  <button type="button" id="btn-guided-draw" class="btn-sec btn-sm" aria-pressed="false" title="Trazar el lote esquina por esquina">
+                    <i data-lucide="pentagon" class="icono"></i>
+                    <span>Dibujar polígono</span>
+                  </button>
+                  <button type="button" id="btn-draw-rectangle" class="btn-sec btn-sm" aria-pressed="false" title="Trazar un lote rectangular arrastrando el cursor">
+                    <i data-lucide="square-dashed" class="icono"></i>
+                    <span>Dibujar rectángulo</span>
+                  </button>
+                  <button type="button" id="btn-edit-layers" class="btn-sec btn-sm" aria-pressed="false" title="Mover las esquinas del lote actual">
+                    <i data-lucide="move" class="icono"></i>
+                    <span id="btn-edit-layers-text">Editar bordes</span>
+                  </button>
+                  <button type="button" id="btn-gps-50m" class="btn-sec btn-sm" title="Centrar en mi ubicación GPS con un lote de 50×50 m">
+                    <i data-lucide="locate-fixed" class="icono"></i>
+                    <span>Mi posición (50×50 m)</span>
+                  </button>
+                  <button type="button" id="btn-add-sensor" class="btn-sec btn-sm solo-tecnico">
+                    <i data-lucide="radio" class="icono"></i>
+                    <span>Sensor en tierra (LoRa)</span>
+                  </button>
+                  <label for="input-import-drone" class="btn-sec btn-sm solo-tecnico" style="cursor:pointer; margin:0;">
+                    <i data-lucide="upload" class="icono"></i>
+                    <span>Importar Dron (KML/GeoJSON)</span>
+                  </label>
+                  <input type="file" id="input-import-drone" accept=".geojson,.json,.kml" hidden />
+                  <button type="button" id="btn-reset-parcela" class="btn-sec btn-sm">
+                    <i data-lucide="rotate-ccw" class="icono"></i>
+                    <span>Restaurar lote</span>
+                  </button>
+                </div>
               </div>
-              <div id="mapa-parcela" class="map-container" aria-label="Mapa satelital interactivo de la parcela"></div>
-              <div id="capas-nasa" class="capas-nasa" aria-label="Capas satelitales de la NASA"></div>
+
+              <!-- Banner de dibujo / edición guiada con acciones en la parte superior -->
+              <div id="guided-draw-banner" class="guided-draw-banner" role="status" hidden>
+                <span id="guided-draw-banner-text">Haz clic en las esquinas de tu terreno. Doble clic para terminar.</span>
+                <span id="guided-draw-live-area" class="guided-live-area tabular-nums">Área en vivo: 0 m² (0.0 cuadras)</span>
+                <div class="guided-banner-actions">
+                  <button type="button" id="btn-finish-draw" class="btn btn-sm" hidden>Terminar lote</button>
+                  <button type="button" id="btn-undo-draw" class="btn-sec btn-sm" hidden>Borrar último punto</button>
+                  <button type="button" id="btn-save-edit" class="btn btn-sm" hidden>Guardar cambios</button>
+                  <button type="button" id="btn-cancel-guided" class="btn-link-sm">Cancelar</button>
+                </div>
+              </div>
+
+              <div class="map-stage">
+                <div id="mapa-parcela" class="map-container" aria-label="Mapa satelital interactivo de la parcela"></div>
+                <div id="guided-draw-tooltip" class="guided-draw-tooltip" hidden>
+                  Haz clic en las esquinas de tu terreno · Doble clic para cerrar
+                </div>
+              </div>
+              <div id="capas-nasa" class="capas-nasa" aria-label="Leyenda de la capa satelital activa" hidden></div>
+
+              <!-- Panel de calibración de nodo sensor LoRa (cuando hay sensor activo en el lote) -->
+              <div id="sensor-node-panel" class="estado-datos-vivo" hidden>
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                  <strong><i data-lucide="radio" class="icono"></i> Nodo Sensor LoRa activo en el lote <span id="sensor-node-coords" class="tabular-nums" style="font-weight:500; font-size:0.78rem; color:var(--color-text-muted);"></span></strong>
+                  <button type="button" id="btn-remove-sensor" class="btn-link-sm">Quitar sensor</button>
+                </div>
+                <div class="form-grid-3" style="margin-top:8px;">
+                  <div class="field-group">
+                    <label for="sensor-lluvia-mm">Pluviómetro local (mm/año)</label>
+                    <input type="number" id="sensor-lluvia-mm" class="field-input tabular-nums" step="10" min="50" max="4000" />
+                  </div>
+                  <div class="field-group">
+                    <label for="sensor-soc-pct">Sonda carbono / MOS (%)</label>
+                    <input type="number" id="sensor-soc-pct" class="field-input tabular-nums" step="0.1" min="0.2" max="15" />
+                  </div>
+                  <div class="field-group">
+                    <label for="sensor-ph">Sonda pH en suelo</label>
+                    <input type="number" id="sensor-ph" class="field-input tabular-nums" step="0.1" min="4.0" max="8.5" />
+                  </div>
+                </div>
+              </div>
+
               <div id="parcela-activa" class="parcela-activa" role="status"></div>
               <div id="estado-datos-vivo" class="estado-datos-vivo" role="status" aria-live="polite" hidden></div>
             </div>
@@ -348,7 +415,7 @@
                 </h3>
                 <div class="fila">
                   <span>Superficie del lote</span>
-                  <span><span id="kpi-area-val" class="tabular-nums">1.8 ha</span> <small id="kpi-area-sub"
+                  <span><span id="kpi-area-val" class="tabular-nums">18 000 m²</span> <small id="kpi-area-sub"
                       class="unidad">(~2.6 cuadras)</small></span>
                 </div>
                 <div class="fila">
@@ -733,6 +800,16 @@
             <!-- Generado dinámicamente por app.js -->
           </div>
 
+          <!-- Disclaimer de Responsabilidad (Foco centrado en el usuario) -->
+          <aside class="rotasat-disclaimer-banner" role="note" aria-label="Nota importante de responsabilidad">
+            <div class="disclaimer-icon-wrap" aria-hidden="true">
+              <i data-lucide="triangle-alert" class="icono"></i>
+            </div>
+            <p class="disclaimer-text">
+              <strong>Nota importante:</strong> RotaSat es una herramienta de apoyo a la toma de decisiones basada en datos satelitales. Las proyecciones climáticas y sugerencias de cultivos deben ser validadas siempre con la experiencia del agricultor y el criterio de técnicos agrícolas locales. No reemplaza el juicio humano en campo.
+            </p>
+          </aside>
+
 
           </div>
 
@@ -921,6 +998,21 @@
                   RotaSat armoniza 6 fuentes de observación de la Tierra de la NASA e ISRIC con distintas resoluciones
                   espaciales y temporales hacia la escala de parcela y paso mensual durante 36 meses.
                 </p>
+
+                <!-- Bloque de Armonización de Resoluciones Espaciales (Enfoque Jurado Space Apps) -->
+                <div class="harmonization-box">
+                  <h3><i data-lucide="layers" class="icono"></i> Armonización de Resoluciones Espaciales</h3>
+                  <p>
+                    Para traducir observaciones orbitales heterogéneas a decisiones agronómicas dentro de los linderos exactos de un polígono parcelario local (por ejemplo, un lote andino de <strong>20 000 m²</strong>), <strong>RotaSat</strong> implementa un flujo de reducción de escala física (<em>topographic &amp; edaphic downscaling</em>) e interpolación zonal en dos etapas. Las variables hidrometeorológicas de resolución gruesa —como la humedad en la zona radicular de <strong>SMAP L4 (9 km)</strong>, la precipitación satelital de <strong>GPM IMERG (10 km)</strong> y las series radiativas y térmicas de <strong>NASA POWER / MERRA-2 (~50 km)</strong>— actúan como forzantes atmosféricos de mesoescala y se proyectan sobre la malla fina de <strong>30 m</strong> provista por el modelo digital de elevación <strong>NASADEM / SRTM (30 m)</strong> y la constelación armonizada <strong>HLS Landsat 8/9 + Sentinel-2 (30 m)</strong>. Mediante corrección altitudinal por gradiente térmico adiabático (<code>&Gamma; = &minus;6.5 °C/km</code>), partición de escorrentía superficial modulada por la pendiente local SRTM e integración con la capacidad de retención hídrica de <strong>ISRIC SoilGrids (250 m)</strong>, el motor recorta y pondera cada píxel dentro del polígono de <strong>20 000 m²</strong>, garantizando que el balance hídrico FAO-56 y el índice <strong>IRR</strong> reflejen las microcondiciones reales de la finca y no un promedio regional sin ajustar.
+                  </p>
+                  <div class="harmonization-scale-pills">
+                    <span class="scale-pill coarse">Macroescala: NASA POWER (~50 km) · GPM (10 km) · SMAP (9 km)</span>
+                    <span class="scale-arrow" aria-hidden="true">→</span>
+                    <span class="scale-pill mid">Mesoescala: ISRIC SoilGrids (250 m)</span>
+                    <span class="scale-arrow" aria-hidden="true">→</span>
+                    <span class="scale-pill fine">Escala Finca (20 000 m²): SRTM (30 m) · HLS Landsat/Sentinel (30 m)</span>
+                  </div>
+                </div>
 
                 <h3 style="margin:8px 0 4px; color:var(--oliva);">1. Armonización multirresolución de sensores NASA y
                   suelo</h3>

@@ -96,14 +96,18 @@
       }
       a.P += p; a.ET0 += et0; a.tmin = Math.min(a.tmin, tn); a.tmed += tm; a.n++; a.anios.add(y);
     }
+    const DIAS_MES = [31, 28.25, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     const meses = [];
+    let anioMax = 2024;
     for (let m = 1; m <= 12; m++) {
-      const a = acum[m], na = Math.max(1, a.anios.size);
+      const a = acum[m];
       if (!a.n) return null;
+      a.anios.forEach(y => { if (y > anioMax) anioMax = y; });
+      const diasMes = DIAS_MES[m - 1];
       const fila = {
         mes: m, nombre_mes: NOMBRES_MES[m - 1],
-        P_mm: Math.round(a.P / na * 10) / 10,
-        ET0_mm: Math.round(a.ET0 / na * 10) / 10,
+        P_mm: Math.round((a.P / a.n) * diasMes * 10) / 10,
+        ET0_mm: Math.round((a.ET0 / a.n) * diasMes * 10) / 10,
         Tmin_abs: Math.round(a.tmin * 10) / 10,
         Tmed: Math.round(a.tmed / a.n * 10) / 10
       };
@@ -116,7 +120,7 @@
     }
     const metodoEt0 = usarPm ? 'Penman-Monteith FAO-56 (radiación, viento y humedad de NASA POWER)'
                              : 'Hargreaves FAO-56 (solo temperatura)';
-    return { meses, elevCelda, dT, metodoEt0 };
+    return { meses, elevCelda, dT, metodoEt0, periodo: `2015–${anioMax}` };
   }
 
   // ---------- NASA POWER: anomalía de lluvia (últimos 3 meses completos) ----------
@@ -240,9 +244,10 @@
       avisar('terreno', false);
       return null;
     })();
-    const pClimaRaw = fetchJson(`${base}&parameters=T2M_MAX,T2M_MIN,T2M,PRECTOTCORR,ALLSKY_SFC_SW_DWN,WS2M,RH2M&latitude=${la}&longitude=${lo}&start=20150101&end=20241231`, 60000)
+    const hoy = yyyymmdd(new Date());
+    const pClimaRaw = fetchJson(`${base}&parameters=T2M_MAX,T2M_MIN,T2M,PRECTOTCORR,ALLSKY_SFC_SW_DWN,WS2M,RH2M&latitude=${la}&longitude=${lo}&start=20150101&end=${hoy}`, 60000)
       .catch(() => null);
-    const pAnom = fetchJson(`${base}&parameters=PRECTOTCORR&latitude=${la}&longitude=${lo}&start=20010101&end=${yyyymmdd(new Date())}`, 60000)
+    const pAnom = fetchJson(`${base}&parameters=PRECTOTCORR&latitude=${la}&longitude=${lo}&start=20010101&end=${hoy}`, 60000)
       .then(procesarAnomalia).catch(() => null)
       .then(r => { avisar('anomalia', !!r); return r; });
     const qSuelo = (la2, lo2) => `lon=${lo2}&lat=${la2}&depth=0-5cm&depth=5-15cm&depth=15-30cm&value=mean` +
